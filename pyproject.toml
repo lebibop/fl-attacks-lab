@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling>=1.26.0"]
+build-backend = "hatchling.build"
+
+
+[project]
+name = "fl-attacks-lab"
+version = "0.1.0"
+description = "Federated learning attack experiments using Flower and PyTorch"
+license = "MIT"
+
+requires-python = ">=3.11,<3.12"
+
+dependencies = [
+    "flwr==1.32.1",
+    "torch==2.2.2",
+    "torchvision==0.17.2",
+    "numpy==1.26.4",
+    "PyYAML==6.0.2",
+    "matplotlib==3.8.4",
+]
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fl_attacks"]
+
+
+[tool.flwr.app]
+publisher = "klimnikolaev"
+fab-include = [
+    "src/fl_attacks/**/*.py",
+]
+
+
+[tool.flwr.app.components]
+serverapp = "fl_attacks.server_app:app"
+clientapp = "fl_attacks.client_app:app"
+
+
+[tool.flwr.app.config]
+dataset = "mnist"
+data-root = "data"
+
+num-server-rounds = 5
+num-clients = 10
+fraction-train = 1.0
+fraction-evaluate = 1.0
+
+strategy = "fedavg"
+
+server-learning-rate = 1.0
+server-momentum = 0.9
+fedopt-client-learning-rate = 0.1
+fedopt-beta-1 = 0.9
+fedopt-beta-2 = 0.99
+fedopt-tau = 0.001
+
+trimmed-beta = 0.2
+
+local-epochs = 1
+batch-size = 64
+learning-rate = 0.01
+momentum = 0.9
+weight-decay = 0.0001
+
+partition = "dirichlet"
+dirichlet-alpha = 0.5
+val-fraction = 0.1
+
+attack = "none"
+malicious-fraction = 0.2
+attack-start-round = 1
+attack-end-round = -1
+
+label-source = -1
+label-target = 0
+poison-fraction = 0.3
+
+model-attack-scale = 5.0
+noise-std = 1.0
+
+seed = 42
+output-dir = "outputs/default"

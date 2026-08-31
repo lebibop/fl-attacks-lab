@@ -1,0 +1,38 @@
+# Виртуальное окружение
+.venv/
+
+# Служебные файлы Flower
+.flower-local/
+.flwr/
+
+# Датасеты и результаты экспериментов
+data/
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Сборка пакета
+build/
+dist/
+
+# Локальные переменные и секреты
+.env
+.env.*
+!.env.example
+
+# IDE и операционная система
+.idea/
+.vscode/
+.DS_Store
+
+# Временные файлы и логи
+*.log
+*.tmp
