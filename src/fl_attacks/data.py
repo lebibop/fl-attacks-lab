@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence, Sized
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -10,8 +10,14 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
 
-from fl_attacks.attacks import _dataset_length
 from fl_attacks.constants import Datasets
+
+
+def _dataset_length(dataset: Dataset) -> int:
+    """Безопасно возвращает количество объектов в датасете."""
+    if not isinstance(dataset, Sized):
+        raise TypeError("Dataset must implement __len__")
+    return len(dataset)
 
 
 @dataclass(frozen=True)

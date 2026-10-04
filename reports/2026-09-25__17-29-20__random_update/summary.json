@@ -1,0 +1,23 @@
+{
+  "dataset": "cifar100",
+  "attack": "random_update",
+  "strategy": "fedavg",
+  "num_clients": 5,
+  "num_rounds": 10,
+  "malicious_fraction": 0.7,
+  "attack_start_round": 1,
+  "attack_end_round": -1,
+  "partition": "dirichlet",
+  "dirichlet_alpha": 0.5,
+  "final_metrics": {
+    "round": 10,
+    "clean_loss": 4.860494427490234,
+    "clean_accuracy": 0.0635,
+    "clean_precision_macro": 0.03894588484945066,
+    "clean_recall_macro": 0.0635,
+    "clean_f1_macro": 0.02507923315971812,
+    "clean_precision_weighted": 0.03894588484945067,
+    "clean_recall_weighted": 0.0635,
+    "clean_f1_weighted": 0.02507923315971812
+  }
+}

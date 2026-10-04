@@ -201,21 +201,6 @@ def metric_values(
     return [float(row.get(column_name, 0.0) or 0.0) for row in rows]
 
 
-def read_attack_name(output_dir: Path) -> str:
-    """Возвращает тип атаки из сохранённой конфигурации."""
-    config_path = output_dir / "config.yaml"
-
-    if not config_path.exists():
-        return "none"
-
-    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-
-    if not isinstance(config_data, dict):
-        return "none"
-
-    return str(config_data.get("attack", "none"))
-
-
 def configure_metric_axis(
     axis: Any,
     *,
@@ -265,7 +250,6 @@ def plot_metric_dashboard(
         rows,
         "clean_f1_weighted",
     )
-    backdoor_asr = metric_values(rows, "backdoor_asr")
 
     figure, axes = plt.subplots(2, 2, figsize=(15, 10))
     macro_axis, loss_axis = axes[0]
@@ -322,27 +306,13 @@ def plot_metric_dashboard(
         unit_interval=True,
     )
 
-    if read_attack_name(output_dir) == "backdoor":
-        summary_axis.plot(
-            rounds,
-            backdoor_asr,
-            marker="o",
-            label="Backdoor ASR",
-        )
-        configure_metric_axis(
-            summary_axis,
-            title="Backdoor attack success rate",
-            ylabel="ASR",
-            unit_interval=True,
-        )
-    else:
-        plot_final_metrics(
-            summary_axis,
-            accuracy=clean_accuracy[-1],
-            precision=precision_macro[-1],
-            recall=recall_macro[-1],
-            f1=f1_macro[-1],
-        )
+    plot_final_metrics(
+        summary_axis,
+        accuracy=clean_accuracy[-1],
+        precision=precision_macro[-1],
+        recall=recall_macro[-1],
+        f1=f1_macro[-1],
+    )
 
     figure.suptitle(
         "Federated learning experiment metrics",

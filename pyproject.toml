@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 [project]
 name = "fl-attacks-lab"
 version = "0.1.0"
-description = "Federated learning attack experiments using Flower and PyTorch"
+description = "Federated learning model-poisoning experiments using Flower and PyTorch"
 license = "MIT"
 
 requires-python = ">=3.11,<3.12"
@@ -72,12 +72,10 @@ malicious-fraction = 0.2
 attack-start-round = 1
 attack-end-round = -1
 
-label-source = -1
-label-target = 0
-poison-fraction = 0.3
-
 model-attack-scale = 5.0
 noise-std = 1.0
+scaling-factor = 10.0
+random-update-scale = 2.0
 
 seed = 42
 output-dir = "outputs/default"
