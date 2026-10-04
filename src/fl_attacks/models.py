@@ -101,7 +101,7 @@ class CNN(nn.Module):
     Компактная универсальная CNN с остаточными блоками.
 
     Архитектура рассчитана на небольшие изображения и подходит для
-    MNIST, FashionMNIST, EMNIST, CIFAR-10 и CIFAR-100.
+    MNIST, FashionMNIST, CIFAR-10 и CIFAR-100.
     """
 
     FEATURE_DIM = 128

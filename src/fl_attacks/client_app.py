@@ -20,7 +20,6 @@ from .attacks import (
     SUPPORTED_ATTACKS,
     apply_model_attack,
     attack_is_active,
-    poison_training_dataset,
 )
 from .constants import Attacks
 from .data import (
@@ -31,7 +30,7 @@ from .data import (
 )
 from .models import create_model
 from .train_utils import (
-    evaluate_model,
+    evaluate_classification,
     seed_everything,
     train_model,
 )
@@ -68,7 +67,10 @@ def _validated_attack(config: Config) -> str:
     attack = str(config["attack"]).lower()
 
     if attack not in SUPPORTED_ATTACKS:
-        raise ValueError(f"Unsupported attack: {attack}")
+        supported = ", ".join(sorted(SUPPORTED_ATTACKS))
+        raise ValueError(
+            f"Unsupported attack: {attack}. Supported attacks: {supported}"
+        )
 
     return attack
 
@@ -129,17 +131,17 @@ def _attack_active(
     seed: int,
 ) -> bool:
     """Проверяет, должен ли клиент атаковать в текущем раунде."""
-    return (
-        attack_is_active(
-            client_id=identity.client_id,
-            server_round=server_round,
-            num_clients=identity.num_clients,
-            malicious_fraction=float(config["malicious-fraction"]),
-            attack_start_round=int(config["attack-start-round"]),
-            attack_end_round=int(config["attack-end-round"]),
-            seed=seed,
-        )
-        and attack != Attacks.NONE
+    if attack == Attacks.NONE:
+        return False
+
+    return attack_is_active(
+        client_id=identity.client_id,
+        server_round=server_round,
+        num_clients=identity.num_clients,
+        malicious_fraction=float(config["malicious-fraction"]),
+        attack_start_round=int(config["attack-start-round"]),
+        attack_end_round=int(config["attack-end-round"]),
+        seed=seed,
     )
 
 
@@ -167,7 +169,7 @@ def train(
     msg: Message,
     context: Context,
 ) -> Message:
-    """Выполняет локальное обучение клиента и возвращает обновлённую модель."""
+    """Обучает локальную модель и при необходимости атакует её обновление."""
     config = context.run_config
     dataset_name = str(config["dataset"])
     attack = _validated_attack(config)
@@ -182,7 +184,6 @@ def train(
     )
 
     seed_everything(round_seed)
-
     device = _device()
 
     train_dataset, _ = _load_local_datasets(
@@ -191,7 +192,6 @@ def train(
         dataset_name=dataset_name,
         seed=seed,
     )
-
     metadata = dataset_metadata(train_dataset)
 
     model = _load_model(
@@ -200,31 +200,13 @@ def train(
         num_classes=metadata.num_classes,
     )
 
-    # Сохраняет исходные глобальные параметры для модельных атак.
+    # Эта копия — точка отсчёта Δw = w_local - w_global.
     global_state = {
         name: tensor.detach().clone()
         for name, tensor in model.state_dict().items()
     }
 
     model.to(device)
-
-    active = _attack_active(
-        config=config,
-        attack=attack,
-        identity=identity,
-        server_round=server_round,
-        seed=seed,
-    )
-
-    if active:
-        train_dataset = poison_training_dataset(
-            dataset=train_dataset,
-            attack=attack,
-            source_label=int(config["label-source"]),
-            target_label=int(config["label-target"]),
-            poison_fraction=float(config["poison-fraction"]),
-            seed=round_seed,
-        )
 
     train_loader = make_loader(
         dataset=train_dataset,
@@ -244,20 +226,29 @@ def train(
         device=device,
     )
 
-    if active:
-        apply_model_attack(
-            model=model,
-            global_state=global_state,
-            attack=attack,
-            scale=float(config["model-attack-scale"]),
-            noise_std=float(config["noise-std"]),
-        )
+    active = _attack_active(
+        config=config,
+        attack=attack,
+        identity=identity,
+        server_round=server_round,
+        seed=seed,
+    )
+
+    diagnostics = apply_model_attack(
+        model=model,
+        global_state=global_state,
+        attack=attack if active else Attacks.NONE,
+        config=config,
+    )
 
     metrics = MetricRecord(
         {
             "train_loss": float(train_loss),
             "train_accuracy": float(train_accuracy),
             "malicious": int(active),
+            "update_l2_before": float(diagnostics.update_l2_before),
+            "update_l2_after": float(diagnostics.update_l2_after),
+            "update_l2_ratio": float(diagnostics.update_l2_ratio),
             "num-examples": len(train_dataset),
         }
     )
@@ -287,7 +278,6 @@ def evaluate(
         dataset_name=dataset_name,
         seed=seed,
     )
-
     metadata = dataset_metadata(val_dataset)
 
     model = _load_model(
@@ -305,16 +295,33 @@ def evaluate(
         device=device,
     )
 
-    loss, accuracy = evaluate_model(
+    classification_metrics, _, _ = evaluate_classification(
         model=model,
         loader=val_loader,
         device=device,
+        num_classes=metadata.num_classes,
     )
 
     metrics = MetricRecord(
         {
-            "eval_loss": float(loss),
-            "eval_accuracy": float(accuracy),
+            "eval_loss": float(classification_metrics["loss"]),
+            "eval_accuracy": float(classification_metrics["accuracy"]),
+            "eval_precision_macro": float(
+                classification_metrics["precision_macro"]
+            ),
+            "eval_recall_macro": float(
+                classification_metrics["recall_macro"]
+            ),
+            "eval_f1_macro": float(classification_metrics["f1_macro"]),
+            "eval_precision_weighted": float(
+                classification_metrics["precision_weighted"]
+            ),
+            "eval_recall_weighted": float(
+                classification_metrics["recall_weighted"]
+            ),
+            "eval_f1_weighted": float(
+                classification_metrics["f1_weighted"]
+            ),
             "num-examples": len(val_dataset),
         }
     )

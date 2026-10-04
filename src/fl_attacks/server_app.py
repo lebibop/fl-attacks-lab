@@ -15,10 +15,7 @@ from flwr.app import (
     Context,
     MetricRecord,
 )
-from flwr.serverapp import (
-    Grid,
-    ServerApp,
-)
+from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import (
     FedAdam,
     FedAvg,
@@ -28,21 +25,11 @@ from flwr.serverapp.strategy import (
     Strategy,
 )
 from torch import nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
-from .attacks import TriggeredTestDataset
-from .constants import Attacks
-from .data import (
-    dataset_metadata,
-    load_dataset,
-    make_loader,
-)
+from .data import dataset_metadata, load_dataset, make_loader
 from .models import create_model
-from .train_utils import (
-    evaluate_classification,
-    evaluate_model,
-    seed_everything,
-)
+from .train_utils import evaluate_classification, seed_everything
 
 app = ServerApp()
 
@@ -63,8 +50,7 @@ class ServerSettings:
     output_dir: Path
 
     @classmethod
-    def from_config(cls, config: Config) -> ServerSettings:
-        """Создаёт настройки сервера из конфигурации Flower."""
+    def from_config(cls, config: Config) -> "ServerSettings":
         return cls(
             dataset_name=str(config["dataset"]),
             attack=str(config["attack"]).lower(),
@@ -86,28 +72,19 @@ class EvaluationState:
 
 
 def _device() -> torch.device:
-    """Возвращает доступное устройство для вычислений."""
     device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
     return torch.device(device_name)
 
 
-def _write_metrics_row(
-    path: Path,
-    row: NumericMetrics,
-) -> None:
-    """Добавляет строку серверных метрик в CSV."""
+def _write_metrics_row(path: Path, row: NumericMetrics) -> None:
+    """Добавляет строку глобальных метрик в CSV."""
     path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not path.exists()
 
     with path.open("a", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(
-            file,
-            fieldnames=list(row.keys()),
-        )
-
+        writer = csv.DictWriter(file, fieldnames=list(row.keys()))
         if write_header:
             writer.writeheader()
-
         writer.writerow(row)
 
 
@@ -116,29 +93,17 @@ def _save_confusion_matrix(
     matrix: np.ndarray,
     class_names: list[str],
 ) -> None:
-    """Сохраняет confusion matrix в CSV."""
     with path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow(["true\\predicted", *class_names])
-
-        for class_name, row in zip(
-            class_names,
-            matrix,
-            strict=True,
-        ):
-            writer.writerow(
-                [
-                    class_name,
-                    *(int(value) for value in row),
-                ]
-            )
+        for class_name, row in zip(class_names, matrix, strict=True):
+            writer.writerow([class_name, *(int(value) for value in row)])
 
 
 def _per_class_report(
     class_names: list[str],
     details: Mapping[str, Any],
 ) -> dict[str, dict[str, int | float]]:
-    """Формирует поклассовые precision, recall, F1 и support."""
     precision_values = details["precision_per_class"]
     recall_values = details["recall_per_class"]
     f1_values = details["f1_per_class"]
@@ -161,7 +126,7 @@ def _save_classification_report(
     details: Mapping[str, Any],
     final_metrics: Mapping[str, int | float],
 ) -> None:
-    """Сохраняет общие и поклассовые метрики в JSON."""
+    """Сохраняет итоговые общие и поклассовые метрики."""
     report = {
         "accuracy": float(final_metrics["clean_accuracy"]),
         "loss": float(final_metrics["clean_loss"]),
@@ -175,7 +140,6 @@ def _save_classification_report(
             "recall": float(final_metrics["clean_recall_weighted"]),
             "f1": float(final_metrics["clean_f1_weighted"]),
         },
-        "backdoor_asr": float(final_metrics["backdoor_asr"]),
         "per_class": _per_class_report(
             class_names=class_names,
             details=details,
@@ -183,50 +147,17 @@ def _save_classification_report(
     }
 
     path.write_text(
-        json.dumps(
-            report,
-            ensure_ascii=False,
-            indent=2,
-        ),
+        json.dumps(report, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
 
 def _prepare_output_directory(output_dir: Path) -> Path:
-    """Подготавливает каталог результатов и новый файл метрик."""
     output_dir.mkdir(parents=True, exist_ok=True)
-
     metrics_path = output_dir / "metrics.csv"
-
     if metrics_path.exists():
         metrics_path.unlink()
-
     return metrics_path
-
-
-def _create_triggered_loader(
-    config: Config,
-    settings: ServerSettings,
-    test_dataset: Dataset,
-    device: torch.device,
-) -> DataLoader | None:
-    """Создаёт тестовый загрузчик с триггерами для backdoor-атаки."""
-    if settings.attack != Attacks.BACKDOOR:
-        return None
-
-    triggered_dataset = TriggeredTestDataset(
-        dataset=test_dataset,
-        source_label=int(config["label-source"]),
-        target_label=int(config["label-target"]),
-    )
-
-    return make_loader(
-        dataset=triggered_dataset,
-        batch_size=settings.batch_size,
-        shuffle=False,
-        seed=settings.seed,
-        device=device,
-    )
 
 
 def _load_global_model(
@@ -235,27 +166,20 @@ def _load_global_model(
     arrays: ArrayRecord,
     device: torch.device,
 ) -> nn.Module:
-    """Создаёт модель и загружает агрегированные параметры."""
     model = create_model(
         in_channels=in_channels,
         num_classes=num_classes,
     )
-
-    model.load_state_dict(
-        arrays.to_torch_state_dict(),
-        strict=True,
-    )
+    model.load_state_dict(arrays.to_torch_state_dict(), strict=True)
     model.to(device)
-
     return model
 
 
 def _build_metrics_row(
     server_round: int,
     classification_metrics: Mapping[str, float],
-    backdoor_asr: float,
 ) -> NumericMetrics:
-    """Формирует строку метрик текущего серверного раунда."""
+    """Метрики на общей чистой тестовой выборке после серверного раунда."""
     return {
         "round": int(server_round),
         "clean_loss": float(classification_metrics["loss"]),
@@ -271,15 +195,13 @@ def _build_metrics_row(
         "clean_recall_weighted": float(
             classification_metrics["recall_weighted"]
         ),
-        "clean_f1_weighted": float(classification_metrics["f1_weighted"]),
-        "backdoor_asr": float(backdoor_asr),
+        "clean_f1_weighted": float(
+            classification_metrics["f1_weighted"]
+        ),
     }
 
 
-def _metric_record(
-    row: Mapping[str, int | float],
-) -> MetricRecord:
-    """Преобразует серверные метрики в Flower MetricRecord."""
+def _metric_record(row: Mapping[str, int | float]) -> MetricRecord:
     return MetricRecord(
         {
             "clean_loss": float(row["clean_loss"]),
@@ -290,7 +212,6 @@ def _metric_record(
             "clean_precision_weighted": float(row["clean_precision_weighted"]),
             "clean_recall_weighted": float(row["clean_recall_weighted"]),
             "clean_f1_weighted": float(row["clean_f1_weighted"]),
-            "backdoor_asr": float(row["backdoor_asr"]),
         }
     )
 
@@ -300,17 +221,15 @@ def _make_global_evaluator(
     num_classes: int,
     device: torch.device,
     clean_test_loader: DataLoader,
-    triggered_loader: DataLoader | None,
     metrics_path: Path,
     state: EvaluationState,
 ):
-    """Создаёт функцию глобальной оценки модели после каждого раунда."""
+    """Создаёт функцию глобальной оценки после каждого раунда."""
 
     def global_evaluate(
         server_round: int,
         arrays: ArrayRecord,
     ) -> MetricRecord:
-        """Оценивает агрегированную модель и сохраняет результаты."""
         model = _load_global_model(
             in_channels=in_channels,
             num_classes=num_classes,
@@ -329,19 +248,9 @@ def _make_global_evaluator(
             num_classes=num_classes,
         )
 
-        backdoor_asr = 0.0
-
-        if triggered_loader is not None:
-            _, backdoor_asr = evaluate_model(
-                model=model,
-                loader=triggered_loader,
-                device=device,
-            )
-
         row = _build_metrics_row(
             server_round=server_round,
             classification_metrics=classification_metrics,
-            backdoor_asr=backdoor_asr,
         )
 
         state.metrics.clear()
@@ -350,15 +259,7 @@ def _make_global_evaluator(
         state.classification_details = classification_details
 
         _write_metrics_row(metrics_path, row)
-
-        print(
-            "SERVER_METRICS "
-            + json.dumps(
-                row,
-                ensure_ascii=False,
-            )
-        )
-
+        print("SERVER_METRICS " + json.dumps(row, ensure_ascii=False))
         return _metric_record(row)
 
     return global_evaluate
@@ -368,7 +269,7 @@ def _create_strategy(
     config: Config,
     num_clients: int,
 ) -> Strategy:
-    """Создаёт выбранную в YAML стратегию агрегации Flower."""
+    """Создаёт выбранную стратегию, сохраняя исходный API Flower 1.32.1."""
     strategy_name = str(config.get("strategy", "fedavg")).lower()
     minimum_nodes = min(2, num_clients)
 
@@ -406,19 +307,13 @@ def _create_strategy(
 
     if strategy_name == "fedtrimmedavg":
         trimmed_beta = float(config["trimmed-beta"])
-
         if not 0.0 <= trimmed_beta < 0.5:
             raise ValueError("trimmed-beta must be in range [0.0, 0.5)")
-
-        return FedTrimmedAvg(
-            **common_kwargs,
-            beta=trimmed_beta,
-        )
+        return FedTrimmedAvg(**common_kwargs, beta=trimmed_beta)
 
     supported = "fedavg, fedavgm, fedadam, fedmedian, fedtrimmedavg"
     raise ValueError(
-        f"Unsupported strategy: {strategy_name}. "
-        f"Supported strategies: {supported}"
+        f"Unsupported strategy: {strategy_name}. Supported strategies: {supported}"
     )
 
 
@@ -426,14 +321,10 @@ def _save_final_model(
     arrays: ArrayRecord | None,
     output_dir: Path,
 ) -> None:
-    """Сохраняет параметры итоговой глобальной модели."""
     if arrays is None:
         return
-
-    final_state = arrays.to_torch_state_dict()
-
     torch.save(
-        final_state,
+        arrays.to_torch_state_dict(),
         output_dir / "final_model.pt",
     )
 
@@ -443,7 +334,6 @@ def _save_final_reports(
     class_names: list[str],
     state: EvaluationState,
 ) -> None:
-    """Сохраняет итоговую confusion matrix и classification report."""
     if state.confusion_matrix is not None:
         _save_confusion_matrix(
             path=output_dir / "confusion_matrix.csv",
@@ -466,7 +356,6 @@ def _save_summary(
     settings: ServerSettings,
     final_metrics: Mapping[str, int | float],
 ) -> None:
-    """Сохраняет параметры эксперимента и итоговые метрики."""
     summary = {
         "dataset": settings.dataset_name,
         "attack": settings.attack,
@@ -474,17 +363,15 @@ def _save_summary(
         "num_clients": settings.num_clients,
         "num_rounds": settings.num_rounds,
         "malicious_fraction": float(config["malicious-fraction"]),
+        "attack_start_round": int(config["attack-start-round"]),
+        "attack_end_round": int(config["attack-end-round"]),
         "partition": str(config["partition"]),
         "dirichlet_alpha": float(config["dirichlet-alpha"]),
         "final_metrics": dict(final_metrics),
     }
 
     path.write_text(
-        json.dumps(
-            summary,
-            ensure_ascii=False,
-            indent=2,
-        ),
+        json.dumps(summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
@@ -499,9 +386,7 @@ def main(
     settings = ServerSettings.from_config(config)
 
     seed_everything(settings.seed)
-
     device = _device()
-
     metrics_path = _prepare_output_directory(settings.output_dir)
 
     test_dataset = load_dataset(
@@ -509,12 +394,7 @@ def main(
         root=str(config["data-root"]),
         train=False,
     )
-
     metadata = dataset_metadata(test_dataset)
-
-    in_channels = metadata.in_channels
-    num_classes = metadata.num_classes
-    class_names = list(metadata.class_names)
 
     clean_test_loader = make_loader(
         dataset=test_dataset,
@@ -524,28 +404,19 @@ def main(
         device=device,
     )
 
-    triggered_loader = _create_triggered_loader(
-        config=config,
-        settings=settings,
-        test_dataset=test_dataset,
-        device=device,
-    )
-
     evaluation_state = EvaluationState(metrics={})
-
     global_evaluate = _make_global_evaluator(
-        in_channels=in_channels,
-        num_classes=num_classes,
+        in_channels=metadata.in_channels,
+        num_classes=metadata.num_classes,
         device=device,
         clean_test_loader=clean_test_loader,
-        triggered_loader=triggered_loader,
         metrics_path=metrics_path,
         state=evaluation_state,
     )
 
     initial_model = create_model(
-        in_channels=in_channels,
-        num_classes=num_classes,
+        in_channels=metadata.in_channels,
+        num_classes=metadata.num_classes,
     )
     initial_arrays = ArrayRecord(initial_model.state_dict())
 
@@ -566,13 +437,11 @@ def main(
         arrays=result.arrays,
         output_dir=settings.output_dir,
     )
-
     _save_final_reports(
         output_dir=settings.output_dir,
-        class_names=class_names,
+        class_names=list(metadata.class_names),
         state=evaluation_state,
     )
-
     _save_summary(
         path=settings.output_dir / "summary.json",
         config=config,

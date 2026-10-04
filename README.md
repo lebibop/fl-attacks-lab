@@ -1,404 +1,227 @@
-# Запуск экспериментов
+# Federated Model Poisoning Lab
 
-Все команды выполняются из корневой папки проекта, где находятся:
+Стенд для исследования **model poisoning** в федеративном обучении на **Flower**.
 
-* `run.py`;
-* `pyproject.toml`;
-* папка `configs`.
+Проект позволяет сравнивать поведение федеративной модели без атаки и при различных способах отравления клиентских обновлений, а также оценивать устойчивость разных стратегий серверной агрегации.
 
-## Установка зависимостей
+Поддерживаемые атаки:
 
-Перед первым запуском выполните:
+- **Sign Flip** — разворот направления клиентского обновления;
+- **Gaussian Noise** — добавление случайного гауссовского шума;
+- **Scaling Attack** — искусственное увеличение величины обновления;
+- **Random Update** — замена честного обновления случайным направлением.
+
+Подробное описание принципов работы и формул: [`attacks.md`](attacks.md).
+
+---
+
+## Установка
+
+Проект рассчитан на **Python 3.11**. Зависимости и их версии зафиксированы в `pyproject.toml`.
+
+Установка окружения:
 
 ```bash
 uv sync
 ```
 
-Эксперименты запускаются через `run.py` в окружении `uv`.
-
-## Быстрый запуск
-
-```bash
-pkill -f flower-supernode 2>/dev/null || true
-pkill -f flower-superlink 2>/dev/null || true
-pkill -f "flwr run" 2>/dev/null || true
-
-uv run python run.py \
-  --config configs/experiments.yaml \
-  --experiment EXPERIMENT_NAME
-```
-
-Первые три команды завершают процессы Flower, которые могли остаться после предыдущего запуска.
-
-## Параметры запуска
-
-### `--config`
-
-Указывает путь к YAML-файлу с настройками экспериментов:
-
-```bash
---config configs/experiments.yaml
-```
-
-Можно использовать другой файл:
-
-```bash
---config configs/my_experiments.yaml
-```
-
-Для стандартного файла `configs/experiments.yaml` параметр можно не указывать:
-
-```bash
-uv run python run.py --experiment backdoor
-```
-
-### `--experiment`
-
-Указывает эксперимент, который нужно запустить.
-
-Доступные значения:
-
-* `clean` — обучение без атаки;
-* `label_flip` — подмена меток;
-* `sign_flip` — инвертирование обновления модели;
-* `backdoor` — внедрение триггера в изображения;
-* `gaussian_noise` — добавление шума к обновлениям модели;
-* `all` — последовательный запуск всех экспериментов.
-
-Название должно совпадать со значением `name` в `configs/experiments.yaml`:
-
-```yaml
-experiments:
-  - name: backdoor
-    attack: backdoor
-```
-
-Пример запуска:
-
-```bash
-uv run python run.py --experiment backdoor
-```
-
-### `--no-stream`
-
-Отключает потоковый вывод логов Flower:
-
-```bash
-uv run python run.py \
-  --experiment backdoor \
-  --no-stream
-```
-
-## Запуск одного эксперимента
-
-```bash
-pkill -f flower-supernode 2>/dev/null || true
-pkill -f flower-superlink 2>/dev/null || true
-pkill -f "flwr run" 2>/dev/null || true
-
-uv run python run.py --experiment label_flip
-```
-
-Вместо `label_flip` можно указать любое имя из раздела `experiments`.
-
-## Запуск всех экспериментов
-
-```bash
-pkill -f flower-supernode 2>/dev/null || true
-pkill -f flower-superlink 2>/dev/null || true
-pkill -f "flwr run" 2>/dev/null || true
-
-uv run python run.py --experiment all
-```
-
-Команда последовательно запускает:
+Основные версии:
 
 ```text
-clean
-label_flip
-sign_flip
-backdoor
-gaussian_noise
+flwr==1.32.1
+torch==2.2.2
+torchvision==0.17.2
+numpy==1.26.4
 ```
 
-## Выбор датасета
+---
 
-Все эксперименты выполняются на одном датасете, указанном в разделе `defaults`:
+## Запуск
 
-```yaml
-defaults:
-  dataset: fashionmnist
+Все команды выполняются из корня проекта.
+
+Перед новым запуском при необходимости можно остановить оставшиеся процессы Flower:
+
+```bash
+pkill -f flower-supernode 2>/dev/null || true
+pkill -f flower-superlink 2>/dev/null || true
+pkill -f "flwr run" 2>/dev/null || true
 ```
 
-Поддерживаемые значения:
+### Эксперимент без атаки
 
-```yaml
-dataset: mnist
-dataset: fashionmnist
-dataset: cifar10
+```bash
+uv run python run.py --experiment clean
 ```
 
-Чтобы запустить все атаки на другом датасете, достаточно изменить одну строку:
+### Отдельная атака
 
-```yaml
-defaults:
-  dataset: mnist
+```bash
+uv run python run.py --experiment sign_flip
+uv run python run.py --experiment gaussian_noise
+uv run python run.py --experiment scaling
+uv run python run.py --experiment random_update
 ```
 
-После этого команда:
+### Все эксперименты последовательно
 
 ```bash
 uv run python run.py --experiment all
 ```
 
-запустит все пять экспериментов на MNIST.
+### Явное указание конфигурации
 
-Использование одного датасета позволяет корректно сравнивать атаки. В этом случае условия обучения остаются одинаковыми, а эксперименты отличаются только типом вредоносного воздействия.
-
-Например, результаты `sign_flip` и `backdoor` можно сравнивать напрямую, поскольку обе атаки применяются к одной модели, одному датасету и одинаковому распределению данных.
-
-Для основного сравнения рекомендуется использовать:
-
-```yaml
-dataset: fashionmnist
+```bash
+uv run python run.py \
+  --config configs/experiments.yaml \
+  --experiment sign_flip
 ```
 
-Fashion-MNIST сложнее обычного MNIST, но требует значительно меньше ресурсов, чем CIFAR-10.
+---
 
+## Эксперименты
 
-## Выбор стратегии агрегации
+Основная конфигурация экспериментов находится в `configs/experiments.yaml`.
 
-Стратегия задаётся параметром `strategy` в разделе `defaults` или внутри отдельного эксперимента:
+Предусмотрено пять сценариев:
+
+| Эксперимент | Назначение |
+|---|---|
+| `clean` | Контрольный запуск без атаки |
+| `sign_flip` | Атака Sign Flip |
+| `gaussian_noise` | Атака Gaussian Noise |
+| `scaling` | Атака Scaling |
+| `random_update` | Атака Random Update |
+
+Для корректного сравнения экспериментов основные условия рекомендуется сохранять одинаковыми: **датасет, seed, число клиентов, число серверных раундов, число локальных эпох, способ распределения данных и стратегию агрегации**.
+
+Между запусками с атаками должны меняться прежде всего тип атаки и её параметры.
+
+### Общие параметры атак
+
+`malicious-fraction` задаёт долю вредоносных клиентов среди участников федеративного обучения.
+
+`attack-start-round` определяет первый раунд, в котором начинается атака, а `attack-end-round` — последний атакуемый раунд. Значение
 
 ```yaml
-defaults:
-  strategy: fedavg
+attack-end-round: -1
 ```
 
-Поддерживаются пять стратегий:
+означает, что атака продолжается до завершения эксперимента.
 
-- `fedavg` — обычное взвешенное усреднение обновлений клиентов;
+Параметры силы конкретных атак задаются отдельно в соответствующих экспериментах:
+
+```yaml
+model-attack-scale: 2.0
+noise-std: 2.0
+scaling-factor: 10.0
+random-update-scale: 2.0
+```
+
+Подробные комментарии к параметрам и допустимым значениям находятся непосредственно в `configs/experiments.yaml`.
+
+---
+
+## Датасеты
+
+Поддерживаются четыре датасета:
+
+- `mnist`;
+- `fashionmnist`;
+- `cifar10`;
+- `cifar100`.
+
+Данные между клиентами могут распределяться двумя способами:
+
+- **IID** — клиенты получают примерно одинаково распределённые данные;
+- **Non-IID через Dirichlet-разбиение** — распределения классов у клиентов различаются.
+
+Non-IID-сценарий позволяет исследовать атаки в более неоднородных условиях, когда локальные данные клиентов отличаются друг от друга.
+
+---
+
+## Стратегии агрегации
+
+Поддерживаются следующие серверные стратегии:
+
+- `fedavg` — классическое взвешенное усреднение клиентских моделей;
 - `fedavgm` — FedAvg с серверным momentum;
-- `fedadam` — адаптивная серверная оптимизация Adam;
-- `fedmedian` — покоординатная медиана, более устойчивая к выбросам;
-- `fedtrimmedavg` — усечённое среднее, отбрасывающее крайние значения.
+- `fedadam` — серверная оптимизация на основе Adam;
+- `fedmedian` — покоординатная медиана клиентских обновлений;
+- `fedtrimmedavg` — усечённое среднее с удалением крайних значений.
 
-### Общая стратегия для всех экспериментов
+Наличие обычных и робастных стратегий позволяет сравнивать, насколько разные способы агрегации устойчивы к одной и той же атаке.
 
-```yaml
-defaults:
-  strategy: fedavg
-```
+---
 
-Если внутри эксперимента стратегия не указана, используется значение из `defaults`.
+## Метрики
 
-### Стратегия для отдельного эксперимента
+После каждого серверного раунда глобальная модель оценивается на общей тестовой выборке.
 
-```yaml
-experiments:
-  - name: sign_flip_median
-    attack: sign_flip
-    strategy: fedmedian
-```
+Сохраняются:
 
-Параметр внутри эксперимента переопределяет значение из `defaults`.
+- **Loss**;
+- **Accuracy**;
+- **Macro Precision / Recall / F1**;
+- **Weighted Precision / Recall / F1**;
+- **Confusion Matrix**;
+- **Precision / Recall / F1 / Support** для каждого класса.
 
-### Параметры стратегий
+`F1 macro` усредняет качество по классам без учёта их размера, поэтому каждый класс имеет одинаковый вклад в итоговую метрику.
 
-```yaml
-defaults:
-  # Доступные значения:
-  # fedavg | fedavgm | fedadam | fedmedian | fedtrimmedavg
-  strategy: fedavg
+`F1 weighted` учитывает количество объектов каждого класса (`support`), поэтому классы с большим числом примеров сильнее влияют на итоговое значение.
 
-  # Используется FedAvgM и FedAdam
-  server-learning-rate: 1.0
+Локальная валидация клиентов также возвращает Accuracy, Precision, Recall и F1 в вариантах macro и weighted.
 
-  # Используется только FedAvgM
-  server-momentum: 0.9
-
-  # Используются только FedAdam
-  fedopt-client-learning-rate: 0.1
-  fedopt-beta-1: 0.9
-  fedopt-beta-2: 0.99
-  fedopt-tau: 0.001
-
-  # Используется только FedTrimmedAvg
-  # Допустимый диапазон: [0.0, 0.5)
-  trimmed-beta: 0.2
-```
-
-Параметры, которые не относятся к выбранной стратегии, не используются.
-
-### Примеры
-
-FedAvg:
-
-```yaml
-experiments:
-  - name: clean_fedavg
-    attack: none
-    strategy: fedavg
-```
-
-FedAvgM:
-
-```yaml
-experiments:
-  - name: clean_fedavgm
-    attack: none
-    strategy: fedavgm
-    server-learning-rate: 1.0
-    server-momentum: 0.9
-```
-
-FedAdam:
-
-```yaml
-experiments:
-  - name: clean_fedadam
-    attack: none
-    strategy: fedadam
-    server-learning-rate: 0.1
-    fedopt-client-learning-rate: 0.1
-    fedopt-beta-1: 0.9
-    fedopt-beta-2: 0.99
-    fedopt-tau: 0.001
-```
-
-FedMedian:
-
-```yaml
-experiments:
-  - name: sign_flip_median
-    attack: sign_flip
-    strategy: fedmedian
-    model-attack-scale: 5.0
-```
-
-FedTrimmedAvg:
-
-```yaml
-experiments:
-  - name: sign_flip_trimmed
-    attack: sign_flip
-    strategy: fedtrimmedavg
-    trimmed-beta: 0.2
-    model-attack-scale: 5.0
-```
-
-## Сравнение стратегий
-
-Для корректного сравнения стратегий оставляйте одинаковыми:
-
-- датасет;
-- тип и параметры атаки;
-- количество клиентов;
-- количество серверных раундов;
-- число локальных эпох;
-- способ разбиения данных;
-- долю вредоносных клиентов;
-- `seed`;
-- параметры локального оптимизатора.
-
-Меняться должна только стратегия и параметры, относящиеся к ней.
-
-Пример сравнения одной атаки:
-
-```yaml
-experiments:
-  - name: sign_flip_fedavg
-    attack: sign_flip
-    strategy: fedavg
-    model-attack-scale: 5.0
-
-  - name: sign_flip_fedmedian
-    attack: sign_flip
-    strategy: fedmedian
-    model-attack-scale: 5.0
-
-  - name: sign_flip_trimmed
-    attack: sign_flip
-    strategy: fedtrimmedavg
-    trimmed-beta: 0.2
-    model-attack-scale: 5.0
-```
-
-Запуск всех сравнительных экспериментов:
-
-```bash
-uv run python run.py --experiment all
-```
-
-## Настройка экспериментов
-
-Общие параметры задаются в разделе `defaults`:
-
-```yaml
-defaults:
-  dataset: fashionmnist
-  strategy: fedavg
-  num-server-rounds: 15
-  num-clients: 10
-  local-epochs: 2
-  batch-size: 64
-  malicious-fraction: 0.3
-```
-
-Они применяются ко всем экспериментам.
-
-Параметры внутри отдельного эксперимента переопределяют значения из `defaults`:
-
-```yaml
-experiments:
-  - name: sign_flip
-    attack: sign_flip
-    model-attack-scale: 5.0
-```
-
-Для корректного сравнения атак рекомендуется оставлять одинаковыми:
-
-* датасет;
-* стратегию агрегации;
-* количество клиентов;
-* количество раундов;
-* число локальных эпох;
-* способ разбиения данных;
-* долю вредоносных клиентов;
-* seed;
-* параметры оптимизатора.
-
-Между экспериментами должны изменяться только тип атаки и её параметры.
+---
 
 ## Результаты
 
-Для каждого эксперимента создаётся отдельная папка:
+Для каждого запуска создаётся отдельный каталог:
 
 ```text
-outputs/
-└── ДАТА_ВРЕМЯ_НАЗВАНИЕ_ЭКСПЕРИМЕНТА/
+outputs/YYYY-MM-DD__HH-MM-SS__EXPERIMENT/
 ```
 
-Например:
+В нём сохраняются:
 
-```text
-outputs/
-├── 2026-07-24__12-00-00__clean/
-├── 2026-07-24__12-01-00__label_flip/
-├── 2026-07-24__12-02-00__sign_flip/
-├── 2026-07-24__12-03-00__backdoor/
-└── 2026-07-24__12-04-00__gaussian_noise/
+| Файл | Содержимое |
+|---|---|
+| `config.yaml` | Фактическая конфигурация запуска |
+| `metrics.csv` | Глобальные метрики по серверным раундам |
+| `metrics.png` | Графики изменения метрик |
+| `confusion_matrix.csv` | Confusion matrix в табличном виде |
+| `confusion_matrix.png` | Визуализация confusion matrix |
+| `classification_report.json` | Метрики классификации по классам |
+| `summary.json` | Итоговая сводка эксперимента |
+| `final_model.pt` | Финальное состояние глобальной модели |
+
+Такой формат позволяет отдельно анализировать каждый запуск и сравнивать результаты чистого эксперимента с различными атаками и стратегиями агрегации.
+
+---
+
+## Тесты
+
+Для проверки корректности атак и вспомогательной логики используются unit-тесты.
+
+Запуск всех тестов:
+
+```bash
+uv run python -m unittest discover -s tests -v
 ```
 
-Внутри папки сохраняются:
+Тесты проверяют:
 
-* `config.yaml` — итоговая конфигурация запуска;
-* `metrics.csv` — метрики по серверным раундам;
-* `metrics.png` — графики метрик;
-* `confusion_matrix.csv` — итоговая confusion matrix;
-* `confusion_matrix.png` — визуализация confusion matrix;
-* `classification_report.json` — precision, recall, F1 и support по классам;
-* `summary.json` — параметры, выбранная стратегия и итоговые метрики эксперимента;
-* `final_model.pt` — веса итоговой глобальной модели.
+- математику **Sign Flip**;
+- математику **Scaling Attack**;
+- поведение **Gaussian Noise** при нулевой интенсивности;
+- норму обновления **Random Update**;
+- воспроизводимость выбора вредоносных клиентов;
+- корректность временного окна атаки.
 
-Для backdoor-эксперимента дополнительно рассчитывается `Backdoor Attack Success Rate` — доля изображений с триггером, отнесённых моделью к целевому классу.
+---
+
+## Дополнительные материалы
+
+- [`attacks.md`](attacks.md) — теоретический конспект по реализованным атакам model poisoning;
+- `configs/experiments.yaml` — параметры и сценарии экспериментов с комментариями к настройкам.
